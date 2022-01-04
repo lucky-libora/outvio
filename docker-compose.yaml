@@ -1,0 +1,14 @@
+version: '3.6'
+services:
+  redis:
+    image: redis:6.2.6-alpine
+  api:
+    image: node:16.13.1-alpine
+    working_dir: /app
+    command: npm run dev
+    environment:
+      NODE_ENV: development
+    volumes:
+      - ./:/app
+    ports:
+      - "3000:3000"
