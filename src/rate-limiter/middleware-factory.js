@@ -1,11 +1,11 @@
-const { RateLimiterRedis } = require('rate-limiter-flexible')
 const { redisClient } = require('../redis')
 const { getEndpointWeight } = require('./helpers')
+const { RedisRateLimiter } = require('./redis-rate-limiter')
 
 const limit = parseInt(process.env.RATE_LIMITER_LIMIT)
-const duration = parseInt(process.env.RATE_LIMITER_DURATION_IN_SECONDS)
+const duration = parseInt(process.env.RATE_LIMITER_DURATION_IN_MILLISECONDS)
 
-const rateLimiter = new RateLimiterRedis({
+const rateLimiter = new RedisRateLimiter({
   storeClient: redisClient,
   keyPrefix: 'rate_limiter:',
   points: limit,
@@ -14,23 +14,23 @@ const rateLimiter = new RateLimiterRedis({
 
 function createRateLimiterMiddleware(keyGetter) {
   return async (req, res, next) => {
-    try {
-      const key = keyGetter(req)
-      if (!key) {
-        return next()
-      }
+    const key = keyGetter(req)
+    if (!key) {
+      return next()
+    }
 
-      const weight = getEndpointWeight(req.url)
-      await rateLimiter.consume(key, weight)
-      next()
-    } catch (err) {
-      res.status(429).send({
+    const weight = getEndpointWeight(req.url)
+    const rateLimiterResult = await rateLimiter.consume(key, weight)
+    if (rateLimiterResult.limitReached) {
+      return res.status(429).send({
         message: 'Too Many Requests',
-        currentUsage: err.consumedPoints,
+        currentUsage: rateLimiterResult.currentUsage,
         usageLimit: limit,
-        resetDate: new Date(Date.now() + err.msBeforeNext),
+        resetDate: rateLimiterResult.resetDate,
       })
     }
+
+    return next()
   }
 }
 
